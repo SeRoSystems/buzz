@@ -36,6 +36,7 @@ import {
 } from "@/features/agents/lib/usePersonaCatalogRelay";
 import { personaSaveNotice } from "@/features/agents/lib/personaSaveNotice";
 import { useCreatedAgentChannelAttachment } from "@/features/agents/useCreatedAgentChannelAttachment";
+import { useLinkedAgentBehaviorSync } from "@/features/agents/useLinkedAgentBehaviorSync";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type {
@@ -85,6 +86,7 @@ export function usePersonaActions() {
   const createAgentMutation = useCreateManagedAgentMutation();
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
+  const linkedAgentBehaviorSync = useLinkedAgentBehaviorSync();
   const updatePersonaAndPublishMutation =
     useUpdatePersonaAndPublishMutation(communityId);
   const deletePersonaMutation = useDeletePersonaMutation();
@@ -187,9 +189,13 @@ export function usePersonaActions() {
     setIsPersonaSubmitPending(true);
     try {
       if ("id" in input) {
+        const previousPersona = personas.find(
+          (persona) => persona.id === input.id,
+        );
         // "Save and publish" promises the community catalog sees this edit, so
         // it must use the command that awaits the relay. A plain save only
         // enqueues the head and cannot report the outcome.
+        let savedPersona: AgentPersona;
         if (options?.publishCatalogUpdates) {
           const result =
             await updatePersonaAndPublishMutation.mutateAsync(input);
@@ -198,12 +204,21 @@ export function usePersonaActions() {
               `[updatePersonaAndPublish] relay publication queued: ${result.relayMessage}`,
             );
           }
+          savedPersona = result.persona;
           setPersonaNoticeMessage(
             personaSaveNotice(input.displayName, result.publicationStatus),
           );
         } else {
-          await updatePersonaMutation.mutateAsync(input);
+          savedPersona = await updatePersonaMutation.mutateAsync(input);
           setPersonaNoticeMessage(personaSaveNotice(input.displayName, null));
+        }
+        const behaviorError = await linkedAgentBehaviorSync.sync(
+          previousPersona,
+          savedPersona,
+        );
+        if (behaviorError) {
+          setPersonaNoticeMessage(null);
+          setPersonaErrorMessage(behaviorError);
         }
       } else {
         const runtime = availableRuntimes.find(

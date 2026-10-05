@@ -314,6 +314,19 @@ export function personaManagedAgentUpdate(
     hasChanges = true;
   }
 
+  // Parallelism is an instance setting the definition only seeds at mint
+  // time, so mirror it only when this edit changed the definition's value;
+  // unrelated edits must not overwrite a per-instance choice.
+  if (
+    persona.parallelism != null &&
+    options.previousPersona !== undefined &&
+    options.previousPersona.parallelism !== persona.parallelism &&
+    persona.parallelism !== agent.parallelism
+  ) {
+    input.parallelism = persona.parallelism;
+    hasChanges = true;
+  }
+
   const runtimeChanged =
     options.previousPersona !== undefined &&
     options.previousPersona.runtime !== persona.runtime;

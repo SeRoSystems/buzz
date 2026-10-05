@@ -131,6 +131,37 @@ test("personaManagedAgentUpdate syncs definition access to the linked agent", ()
   );
 });
 
+test("personaManagedAgentUpdate syncs edited definition parallelism", () => {
+  const unchanged = {
+    name: "Fizz Prime",
+    systemPrompt: "New prompt",
+    model: "new-model",
+    envVars: { NEW_KEY: "2" },
+  };
+
+  assert.deepEqual(
+    personaManagedAgentUpdate(
+      agent({ ...unchanged, parallelism: 1 }),
+      persona({ parallelism: 4 }),
+      { previousPersona: persona({ parallelism: 2 }) },
+    ),
+    { pubkey: "deadbeef".repeat(8), parallelism: 4 },
+  );
+
+  // An edit that leaves the definition's parallelism alone keeps the
+  // instance's own value, as does an edit without the pre-edit definition.
+  for (const previousPersona of [persona({ parallelism: 4 }), undefined]) {
+    assert.equal(
+      personaManagedAgentUpdate(
+        agent({ ...unchanged, parallelism: 1 }),
+        persona({ parallelism: 4 }),
+        { previousPersona },
+      ),
+      null,
+    );
+  }
+});
+
 test("personaManagedAgentUpdate skips unrelated or unchanged agents", () => {
   assert.equal(
     personaManagedAgentUpdate(agent({ personaId: "persona-2" }), persona()),

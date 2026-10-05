@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
   createInputFromRequest,
@@ -24,6 +25,7 @@ import {
   type BackendIntent,
 } from "./lib/instanceInputForDefinition";
 import { useCreatedAgentChannelAttachment } from "./useCreatedAgentChannelAttachment";
+import { useLinkedAgentBehaviorSync } from "./useLinkedAgentBehaviorSync";
 import { classifyAgentManagementOrigin } from "./agentManagementBuffer";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { resolveManagedAgentAvatarUrl } from "./ui/managedAgentAvatar";
@@ -42,6 +44,7 @@ export function useAgentManagement() {
   const runtimesQuery = useAcpRuntimesQuery({ enabled: true });
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
+  const linkedAgentBehaviorSync = useLinkedAgentBehaviorSync();
   const createAgentMutation = useCreateManagedAgentMutation();
   const [request, setRequest] = React.useState<AgentManagementRequest | null>(
     null,
@@ -132,6 +135,7 @@ export function useAgentManagement() {
   const isPending =
     createPersonaMutation.isPending ||
     updatePersonaMutation.isPending ||
+    linkedAgentBehaviorSync.isPending ||
     createAgentMutation.isPending;
 
   function assertAgentCanActFromOrigin(channelId: string) {
@@ -221,11 +225,18 @@ export function useAgentManagement() {
     setError(null);
     try {
       assertAgentCanActFromOrigin(request.request.channelId);
-      await updatePersonaMutation.mutateAsync(input);
+      const savedPersona = await updatePersonaMutation.mutateAsync(input);
+      const behaviorError = await linkedAgentBehaviorSync.sync(
+        currentPersona?.id === savedPersona.id ? currentPersona : undefined,
+        savedPersona,
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: personasQueryKey }),
         queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
       ]);
+      // The definition is saved, so a retry from this dialog would see no
+      // behavior change and skip the agents that failed. Close it and report.
+      if (behaviorError) toast.error(behaviorError);
       dismiss();
       return true;
     } catch (cause) {
